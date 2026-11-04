@@ -1,8 +1,0 @@
-[build]
-  command = "cd functions && npm install"
-  functions = "functions"
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200

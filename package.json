@@ -1,7 +1,0 @@
-{
-  "name": "ace-operations",
-  "version": "1.0.0",
-  "dependencies": {
-    "firebase-admin": "^12.0.0"
-  }
-}
