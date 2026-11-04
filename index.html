@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyber Security Part 3 - AES Animation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            width: 1280px;
+            height: 720px;
+            overflow: hidden;
+            background: #070B14;
+            cursor: none;
+        }
+        
+        #stage {
+            display: block;
+            width: 1280px;
+            height: 720px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="stage" width="1280" height="720"></canvas>
+    
+    <script>
+        // ============================================================
+        // KONSTANTA DAN KONFIGURASI
+        // ============================================================
+        const CANVAS_WIDTH = 1280;
+        const CANVAS_HEIGHT = 720;
+        const FPS = 30;
+        const TOTAL_DURATION = 240; // detik
+        const TOTAL_FRAMES = TOTAL_DURATION * FPS;
+        
+        // Palet warna
+        const COLORS = {
+            bgDark: '#070B14',
+            navy: '#101A33',
+            cyan: '#35E7FF',
+            green: '#4DFF9B',
+            yellow: '#FFD166',
+            red: '#FF5D73',
+            textLight: '#EAF3FF',
+            clay: '#D4A574',
+            clayDark: '#A67C52',
+            clayLight: '#E8C8A0'
+        };
+        
+        const canvas = document.getElementById('stage');
+        const ctx = canvas.getContext('2d');
+        
+        // ============================================================
+        // FUNGSI UTILITAS DETERMINISTIK
+        // ============================================================
+        
+        // Hash deterministik untuk pseudo-random
+        function hash(index) {
+            return Math.abs(Math.sin(index * 12.9898) * 43758.5453) % 1;
+        }
+        
+        // Easing functions
+        function easeInOutCubic(t) {
+            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+        
+        function easeOutCubic(t) {
+            return 1 - Math.pow(1 - t, 3);
+        }
+        
+        function easeOutBack(t) {
+            const c1 = 1.70158;
+            const c3 = c1 + 1;
+            return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+        }
+        
+        function easeInOutQuad(t) {
+            return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        }
+        
+        // Interpolasi linear
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+        
+        // Clamp nilai
+        function clamp(val, min, max) {
+            return Math.max(min, Math.min(max, val));
+        }
+        
+        // ============================================================
+        // FUNGSI MENGGAMBAR DASAR
+        // ============================================================
+        
+        function drawRoundedRect(x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+        }
+        
+        function drawEllipse(cx, cy, rx, ry) {
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        }
+        
+        // ============================================================
+        // BACKGROUND DAN EFEK AMBIENT
+        // ============================================================
+        
+        function drawBackground(t, sceneProgress) {
+            // Gradient dasar
+            const gradient = ctx.createRadialGradient(
+                CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 100,
+                CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 800
+            );
+            gradient.addColorStop(0, '#0F1629');
+            gradient.addColorStop(1, COLORS.bgDark);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            // Partikel ambient
+            ctx.save();
+            for (let i = 0; i < 50; i++) {
+                const seed = hash(i);
+                const x = (i * 137.5 + t * 15) % CANVAS_WIDTH;
+                const y = (i * 89.3 + t * 8) % CANVAS_HEIGHT;
+                const size = 1 + seed * 2;
+                const alpha = 0.1 + seed * 0.2;
+                
+                ctx.fillStyle = `rgba(53, 231, 255, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+            
+            // Vignette
+            const vignette = ctx.createRadialGradient(
+                CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 300,
+                CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 700
+            );
+            vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+            vignette.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
+            ctx.fillStyle = vignette;
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        }
+        
+        // ============================================================
+        // KARAKTER AGUNG
+        // ============================================================
+        
+        function drawAgung(t, x, y, scale = 1, speaking = true, sceneIndex = 0) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+            
+            // Idle animation - napas dan sway
+            const breathOffset = Math.sin(t * 2) * 2;
+            const swayOffset = Math.sin(t * 1.5) * 3;
+            
+            ctx.translate(swayOffset, breathOffset);
+            
+            // Shadow di bawah
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            drawEllipse(0, 80, 50, 10);
+            ctx.fill();
+            
+            // Badan (clay)
+            const bodyGradient = ctx.createLinearGradient(-30, -20, 30, 60);
+            bodyGradient.addColorStop(0, COLORS.clayLight);
+            bodyGradient.addColorStop(0.5, COLORS.clay);
+            bodyGradient.addColorStop(1, COLORS.clayDark);
+            
+            ctx.fillStyle = bodyGradient;
+            drawRoundedRect(-35, -20, 70, 100, 15);
+            ctx.fill();
+            
+            // Rim light
+            ctx.strokeStyle = 'rgba(53, 231, 255, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Lengan kiri
+            const armWave = Math.sin(t * 2) * 5;
+            ctx.fillStyle = bodyGradient;
+            drawRoundedRect(-50, 0, 20, 60, 10);
+            ctx.fill();
+            
+            // Lengan kanan
+            ctx.save();
+            ctx.translate(50, 20);
+            ctx.rotate(armWave * 0.02);
+            ctx.fillStyle = bodyGradient;
+            drawRoundedRect(-10, -20, 20, 60, 10);
+            ctx.fill();
+            ctx.restore();
+            
+            // Kepala
+            const headGradient = ctx.createRadialGradient(0, -50, 10, 0, -50, 40);
+            headGradient.addColorStop(0, COLORS.clayLight);
+            headGradient.addColorStop(1, COLORS.clay);
+            
+            ctx.fillStyle = headGradient;
+            drawEllipse(0, -50, 35, 35);
+            ctx.fill();
+            
+            // Rim light kepala
+            ctx.strokeStyle = 'rgba(53, 231, 255, 0.4)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Mata
+            const blinkCycle = (t % 3.5) / 3.5;
+            const blinkProgress = blinkCycle < 0.05 ? blinkCycle / 0.05 : blinkCycle < 0.1 ? (0.1 - blinkCycle) / 0.05 : 1;
+            
+            // Mata kiri
+            ctx.fillStyle = '#FFFFFF';
+            drawEllipse(-12, -55, 6, 8 * blinkProgress);
+            ctx.fill();
+            ctx.fillStyle = '#000000';
+            drawEllipse(-12, -55, 3, 4 * blinkProgress);
+            ctx.fill();
+            
+            // Mata kanan
+            ctx.fillStyle = '#FFFFFF';
+            drawEllipse(12, -55, 6, 8 * blinkProgress);
+            ctx.fill();
+            ctx.fillStyle = '#000000';
+            drawEllipse(12, -55, 3, 4 * blinkProgress);
+            ctx.fill();
+            
+            // Mulut dengan animasi bicara
+            let mouthOpenness = 0;
+            if (speaking) {
+                // Envelope bicara berbasis waktu
+                const speakCycle = t % 0.4;
+                mouthOpenness = Math.sin(speakCycle * Math.PI * 2) * 0.5 + 0.5;
+                mouthOpenness *= 0.8;
+            }
+            
+            const mouthY = -35;
+            const mouthWidth = 15;
+            const mouthHeight = 5 + mouthOpenness * 8;
+            
+            ctx.fillStyle = '#8B4513';
+            drawEllipse(0, mouthY, mouthWidth, mouthHeight);
+            ctx.fill();
+            
+            ctx.restore();
+        }
+        
+        // ============================================================
+        // FUNGSI SCENE-SPECIFIC
+        // ============================================================
+        
+        // Scene 1: Pembuka - DES ke AES
+        function drawScene1(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 5, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Gembok tua (DES) - fade out
+            const desFadeOut = easeOutCubic(clamp(progress * 3, 0, 1));
+            if (desFadeOut < 0.8) {
+                ctx.save();
+                ctx.globalAlpha = (1 - desFadeOut) * fadeIn;
+                ctx.translate(400, 360);
+                
+                // Gembok berkarat
+                ctx.fillStyle = '#8B7355';
+                drawRoundedRect(-40, -30, 80, 100, 10);
+                ctx.fill();
+                
+                ctx.strokeStyle = '#654321';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Kunci gembok
+                ctx.fillStyle = '#654321';
+                drawRoundedRect(-30, -60, 60, 40, 20);
+                ctx.fill();
+                ctx.stroke();
+                
+                ctx.restore();
+            }
+            
+            // Brankas AES - fade in
+            const aesFadeIn = easeOutCubic(clamp((progress - 0.3) * 3, 0, 1));
+            if (aesFadeIn > 0) {
+                ctx.save();
+                ctx.globalAlpha = aesFadeIn * fadeIn;
+                ctx.translate(800, 360);
+                
+                // Brankas neon
+                const safeGradient = ctx.createLinearGradient(-50, -50, 50, 70);
+                safeGradient.addColorStop(0, '#1a3a52');
+                safeGradient.addColorStop(0.5, '#0f2436');
+                safeGradient.addColorStop(1, '#0a1929');
+                
+                ctx.fillStyle = safeGradient;
+                drawRoundedRect(-50, -50, 100, 120, 8);
+                ctx.fill();
+                
+                // Glow neon
+                ctx.shadowColor = COLORS.cyan;
+                ctx.shadowBlur = 20;
+                ctx.strokeStyle = COLORS.cyan;
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                
+                // Handle
+                ctx.fillStyle = '#FFD700';
+                drawEllipse(0, 0, 20, 20);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+            
+            // Agung
+            drawAgung(t, 600, 450, 1.2, true, 1);
+            
+            // Teks
+            if (progress > 0.5) {
+                const textAlpha = easeOutCubic(clamp((progress - 0.5) * 4, 0, 1));
+                ctx.globalAlpha = textAlpha * fadeIn;
+                
+                ctx.fillStyle = COLORS.textLight;
+                ctx.font = 'bold 36px "Segoe UI", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('PART 2: DES', 640, 150);
+                
+                ctx.fillStyle = COLORS.cyan;
+                ctx.fillText('→ PART 3: AES', 640, 200);
+            }
+            
+            ctx.restore();
+        }
+        
+        // Scene 2: Zoom ke brankas
+        function drawScene2(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            const zoomProgress = easeInOutCubic(clamp(progress * 2, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Brankas zoom in
+            const scale = 1 + zoomProgress * 2;
+            ctx.save();
+            ctx.translate(640, 360);
+            ctx.scale(scale, scale);
+            
+            const safeGradient = ctx.createLinearGradient(-50, -50, 50, 70);
+            safeGradient.addColorStop(0, '#1a3a52');
+            safeGradient.addColorStop(0.5, '#0f2436');
+            safeGradient.addColorStop(1, '#0a1929');
+            
+            ctx.fillStyle = safeGradient;
+            drawRoundedRect(-50, -50, 100, 120, 8);
+            ctx.fill();
+            
+            ctx.shadowColor = COLORS.cyan;
+            ctx.shadowBlur = 20;
+            ctx.strokeStyle = COLORS.cyan;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            
+            ctx.restore();
+            
+            // Transisi ke gedung-gedung
+            if (progress > 0.5) {
+                const buildingsAlpha = easeOutCubic(clamp((progress - 0.5) * 4, 0, 1));
+                ctx.globalAlpha = buildingsAlpha * fadeIn;
+                
+                // Gedung bank
+                ctx.fillStyle = '#2C3E50';
+                drawRoundedRect(200, 300, 120, 200, 5);
+                ctx.fill();
+                ctx.strokeStyle = COLORS.yellow;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Markas militer
+                ctx.fillStyle = '#34495E';
+                drawRoundedRect(400, 280, 140, 220, 5);
+                ctx.fill();
+                ctx.strokeStyle = COLORS.green;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Smartphone
+                ctx.fillStyle = '#1a1a1a';
+                drawRoundedRect(800, 320, 80, 160, 15);
+                ctx.fill();
+                ctx.strokeStyle = COLORS.cyan;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Layar smartphone
+                ctx.fillStyle = '#0f2436';
+                drawRoundedRect(790, 340, 60, 120, 10);
+                ctx.fill();
+            }
+            
+            // Teks
+            const textAlpha = easeOutCubic(clamp(progress * 2, 0, 1));
+            ctx.globalAlpha = textAlpha * fadeIn;
+            
+            ctx.fillStyle = COLORS.cyan;
+            ctx.font = 'bold 48px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = COLORS.cyan;
+            ctx.shadowBlur = 15;
+            ctx.fillText('AES = BRANKAS LEVEL DEWA', 640, 150);
+            ctx.shadowBlur = 0;
+            
+            ctx.restore();
+        }
+        
+        // Scene 3: Pop-up ikon
+        function drawScene3(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Agung menunjuk
+            drawAgung(t, 300, 450, 1.2, true, 3);
+            
+            // Pop-up icons
+            const icons = [
+                { x: 700, y: 300, color: COLORS.yellow, label: 'BANK', delay: 0 },
+                { x: 850, y: 300, color: COLORS.green, label: 'MILITER', delay: 0.2 },
+                { x: 1000, y: 300, color: COLORS.cyan, label: 'CHAT APP', delay: 0.4 }
+            ];
+            
+            icons.forEach((icon, i) => {
+                const iconProgress = easeOutBack(clamp((progress - icon.delay) * 3, 0, 1));
+                if (iconProgress > 0) {
+                    ctx.save();
+                    ctx.globalAlpha = iconProgress * fadeIn;
+                    ctx.translate(icon.x, icon.y);
+                    ctx.scale(iconProgress, iconProgress);
+                    
+                    // Icon background
+                    ctx.fillStyle = icon.color;
+                    drawRoundedRect(-50, -50, 100, 100, 15);
+                    ctx.fill();
+                    
+                    ctx.shadowColor = icon.color;
+                    ctx.shadowBlur = 20;
+                    ctx.strokeStyle = '#FFFFFF';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                    
+                    // Label
+                    ctx.fillStyle = '#000000';
+                    ctx.font = 'bold 16px "Segoe UI", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(icon.label, 0, 70);
+                    
+                    ctx.restore();
+                }
+            });
+            
+            // Teks utama
+            const textAlpha = easeOutCubic(clamp(progress * 2, 0, 1));
+            ctx.globalAlpha = textAlpha * fadeIn;
+            
+            ctx.fillStyle = COLORS.textLight;
+            ctx.font = 'bold 40px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('BANK | MILITER | CHAT APP', 850, 500);
+            
+            ctx.restore();
+        }
+        
+        // Scene 4: Papan tulis kapur
+        function drawScene4(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Papan tulis
+            const boardGradient = ctx.createLinearGradient(200, 150, 200, 550);
+            boardGradient.addColorStop(0, '#2d4a3e');
+            boardGradient.addColorStop(1, '#1a2f26');
+            
+            ctx.fillStyle = boardGradient;
+            drawRoundedRect(200, 150, 880, 420, 10);
+            ctx.fill();
+            
+            ctx.strokeStyle = '#8B7355';
+            ctx.lineWidth = 8;
+            ctx.stroke();
+            
+            // Teks AES muncul
+            const aesProgress = easeOutCubic(clamp(progress * 2, 0, 1));
+            if (aesProgress > 0) {
+                ctx.globalAlpha = aesProgress * fadeIn;
+                
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = 'bold 80px "Segoe UI", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('AES', 640, 280);
+                
+                ctx.font = 'bold 24px "Segoe UI", sans-serif';
+                ctx.fillStyle = COLORS.cyan;
+                ctx.fillText('Advanced Encryption Standard', 640, 330);
+            }
+            
+            // Blok data
+            if (progress > 0.4) {
+                const blocksProgress = easeOutCubic(clamp((progress - 0.4) * 3, 0, 1));
+                ctx.globalAlpha = blocksProgress * fadeIn;
+                
+                for (let i = 0; i < 4; i++) {
+                    const blockX = 400 + i * 80;
+                    ctx.fillStyle = COLORS.cyan;
+                    drawRoundedRect(blockX, 400, 60, 80, 5);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = '#FFFFFF';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    ctx.fillStyle = '#000000';
+                    ctx.font = 'bold 14px "Courier New", monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('128', blockX + 30, 445);
+                }
+                
+                // Label
+                ctx.fillStyle = COLORS.yellow;
+                ctx.font = 'bold 28px "Segoe UI", sans-serif';
+                ctx.fillText('Block Cipher', 640, 520);
+            }
+            
+            ctx.restore();
+        }
+        
+        // Scene 5: Pabrik conveyor
+        function drawScene5(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Conveyor belt
+            ctx.fillStyle = '#2C3E50';
+            drawRoundedRect(100, 450, 1080, 40, 20);
+            ctx.fill();
+            
+            ctx.strokeStyle = '#34495E';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Balok data bergerak
+            const conveyorSpeed = 100;
+            for (let i = 0; i < 8; i++) {
+                const baseX = 150 + i * 140;
+                const blockX = (baseX + t * conveyorSpeed) % 1080;
+                
+                ctx.fillStyle = COLORS.cyan;
+                drawRoundedRect(blockX, 400, 60, 50, 5);
+                ctx.fill();
+                
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 12px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('DATA', blockX + 30, 430);
+            }
+            
+            // Stempel 128-bit
+            const stampProgress = easeOutCubic(clamp(progress * 2, 0, 1));
+            if (stampProgress > 0) {
+                ctx.globalAlpha = stampProgress * fadeIn;
+                
+                ctx.fillStyle = COLORS.yellow;
+                drawRoundedRect(600, 200, 120, 80, 10);
+                ctx.fill();
+                
+                ctx.shadowColor = COLORS.yellow;
+                ctx.shadowBlur = 20;
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 20px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('BLOK:', 660, 235);
+                ctx.fillText('128-bit', 660, 265);
+            }
+            
+            // Panel kunci
+            if (progress > 0.3) {
+                const panelProgress = easeOutCubic(clamp((progress - 0.3) * 3, 0, 1));
+                ctx.globalAlpha = panelProgress * fadeIn;
+                
+                ctx.fillStyle = '#1a1a1a';
+                drawRoundedRect(850, 200, 200, 120, 10);
+                ctx.fill();
+                
+                ctx.strokeStyle = COLORS.cyan;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                ctx.fillStyle = COLORS.textLight;
+                ctx.font = 'bold 18px "Courier New", monospace';
+                ctx.textAlign = 'left';
+                ctx.fillText('KUNCI:', 870, 240);
+                
+                const keySizes = ['128-bit', '192-bit', '256-bit'];
+                keySizes.forEach((size, i) => {
+                    const keyY = 270 + i * 25;
+                    ctx.fillStyle = i === 2 ? COLORS.green : COLORS.textLight;
+                    ctx.fillText(size, 870, keyY);
+                });
+            }
+            
+            ctx.restore();
+        }
+        
+        // Scene 6: Dalam brankas
+        function drawScene6(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            const rotation = t * 2;
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Mesin berputar
+            ctx.save();
+            ctx.translate(640, 360);
+            ctx.rotate(rotation);
+            
+            const machineGradient = ctx.createRadialGradient(0, 0, 50, 0, 0, 150);
+            machineGradient.addColorStop(0, COLORS.cyan);
+            machineGradient.addColorStop(1, '#0f2436');
+            
+            ctx.fillStyle = machineGradient;
+            drawEllipse(0, 0, 150, 150);
+            ctx.fill();
+            
+            ctx.strokeStyle = COLORS.cyan;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Gear teeth
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2;
+                const x1 = Math.cos(angle) * 140;
+                const y1 = Math.sin(angle) * 140;
+                const x2 = Math.cos(angle) * 160;
+                const y2 = Math.sin(angle) * 160;
+                
+                ctx.strokeStyle = COLORS.cyan;
+                ctx.lineWidth = 8;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+            
+            ctx.restore();
+            
+            // Balok data di tengah
+            ctx.fillStyle = COLORS.yellow;
+            drawRoundedRect(580, 330, 120, 60, 10);
+            ctx.fill();
+            
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 16px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('DATA', 640, 365);
+            
+            // Counter putaran
+            if (progress > 0.2) {
+                const counterProgress = easeOutCubic(clamp((progress - 0.2) * 3, 0, 1));
+                ctx.globalAlpha = counterProgress * fadeIn;
+                
+                ctx.fillStyle = '#000000';
+                drawRoundedRect(850, 200, 180, 100, 10);
+                ctx.fill();
+                
+                ctx.strokeStyle = COLORS.cyan;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                ctx.fillStyle = COLORS.textLight;
+                ctx.font = 'bold 24px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('10-14', 940, 240);
+                ctx.fillText('PUTARAN', 940, 270);
+                ctx.fillText('ACAK', 940, 300);
+            }
+            
+            ctx.restore();
+        }
+        
+        // Scene 7: Meja hacker
+        function drawScene7(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Laptop
+            ctx.fillStyle = '#1a1a1a';
+            drawRoundedRect(400, 350, 240, 150, 10);
+            ctx.fill();
+            
+            // Layar laptop
+            ctx.fillStyle = '#0f2436';
+            drawRoundedRect(420, 370, 200, 110, 5);
+            ctx.fill();
+            
+            // Progress bar
+            const progressWidth = 180 * (0.0000001 + (t % 30) * 0.00000001);
+            ctx.fillStyle = COLORS.red;
+            drawRoundedRect(430, 420, progressWidth, 20, 5);
+            ctx.fill();
+            
+            ctx.fillStyle = COLORS.textLight;
+            ctx.font = 'bold 12px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('0.0000001%', 520, 435);
+            
+            // Kalender berputar
+            if (progress > 0.3) {
+                const calendarProgress = easeOutCubic(clamp((progress - 0.3) * 3, 0, 1));
+                ctx.globalAlpha = calendarProgress * fadeIn;
+                
+                ctx.save();
+                ctx.translate(800, 350);
+                
+                const calendarRotation = t * 10;
+                ctx.rotate(Math.sin(calendarRotation) * 0.1);
+                
+                ctx.fillStyle = COLORS.yellow;
+                drawRoundedRect(-60, -40, 120, 80, 10);
+                ctx.fill();
+                
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 16px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('JUTAAN', 0, -10);
+                ctx.fillText('TAHUN', 0, 15);
+                
+                ctx.restore();
+            }
+            
+            // Teks
+            const textAlpha = easeOutCubic(clamp(progress * 2, 0, 1));
+            ctx.globalAlpha = textAlpha * fadeIn;
+            
+            ctx.fillStyle = COLORS.red;
+            ctx.font = 'bold 48px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = COLORS.red;
+            ctx.shadowBlur = 15;
+            ctx.fillText('BRUTE FORCE = MUSTAHIL', 640, 200);
+            ctx.shadowBlur = 0;
+            
+            ctx.restore();
+        }
+        
+        // Scene 8: Coffee shop
+        function drawScene8(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Laptop dengan gembok hijau
+            ctx.fillStyle = '#2C3E50';
+            drawRoundedRect(500, 350, 280, 180, 15);
+            ctx.fill();
+            
+            // Layar
+            ctx.fillStyle = '#0f2436';
+            drawRoundedRect(520, 370, 240, 140, 10);
+            ctx.fill();
+            
+            // Gembok hijau HTTPS
+            const lockProgress = easeOutBack(clamp(progress * 2, 0, 1));
+            if (lockProgress > 0) {
+                ctx.save();
+                ctx.translate(640, 440);
+                ctx.scale(lockProgress, lockProgress);
+                
+                ctx.fillStyle = COLORS.green;
+                drawRoundedRect(-25, -20, 50, 50, 8);
+                ctx.fill();
+                
+                ctx.shadowColor = COLORS.green;
+                ctx.shadowBlur = 20;
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                
+                // Kunci gembok
+                ctx.fillStyle = COLORS.green;
+                drawRoundedRect(-20, -40, 40, 25, 12);
+                ctx.fill();
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                ctx.restore();
+            }
+            
+            // Perisai
+            if (progress > 0.3) {
+                const shieldProgress = easeOutCubic(clamp((progress - 0.3) * 3, 0, 1));
+                ctx.globalAlpha = shieldProgress * fadeIn * 0.6;
+                
+                ctx.strokeStyle = COLORS.green;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(640, 440, 100, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                ctx.globalAlpha = shieldProgress * fadeIn;
+            }
+            
+            // Mata-mata terblokir
+            if (progress > 0.5) {
+                const spyProgress = easeOutCubic(clamp((progress - 0.5) * 3, 0, 1));
+                ctx.globalAlpha = spyProgress * fadeIn;
+                
+                ctx.fillStyle = '#34495E';
+                drawEllipse(200, 400, 40, 60);
+                ctx.fill();
+                
+                // X merah
+                ctx.strokeStyle = COLORS.red;
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.moveTo(180, 380);
+                ctx.lineTo(220, 420);
+                ctx.moveTo(220, 380);
+                ctx.lineTo(180, 420);
+                ctx.stroke();
+            }
+            
+            // Teks
+            const textAlpha = easeOutCubic(clamp(progress * 2, 0, 1));
+            ctx.globalAlpha = textAlpha * fadeIn;
+            
+            ctx.fillStyle = COLORS.green;
+            ctx.font = 'bold 40px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = COLORS.green;
+            ctx.shadowBlur = 15;
+            ctx.fillText('HTTPS = GEMBOK HIJAU', 640, 200);
+            ctx.shadowBlur = 0;
+            
+            ctx.restore();
+        }
+        
+        // Scene 9: Chat app
+        function drawScene9(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Dua HP
+            // HP kiri
+            ctx.fillStyle = '#1a1a1a';
+            drawRoundedRect(300, 300, 120, 200, 20);
+            ctx.fill();
+            
+            ctx.fillStyle = '#0f2436';
+            drawRoundedRect(310, 320, 100, 160, 15);
+            ctx.fill();
+            
+            // HP kanan
+            ctx.fillStyle = '#1a1a1a';
+            drawRoundedRect(860, 300, 120, 200, 20);
+            ctx.fill();
+            
+            ctx.fillStyle = '#0f2436';
+            drawRoundedRect(870, 320, 100, 160, 15);
+            ctx.fill();
+            
+            // Tabung titanium
+            if (progress > 0.3) {
+                const tubeProgress = easeOutCubic(clamp((progress - 0.3) * 3, 0, 1));
+                ctx.globalAlpha = tubeProgress * fadeIn;
+                
+                const tubeGradient = ctx.createLinearGradient(450, 350, 850, 350);
+                tubeGradient.addColorStop(0, '#7f8c8d');
+                tubeGradient.addColorStop(0.5, '#bdc3c7');
+                tubeGradient.addColorStop(1, '#7f8c8d');
+                
+                ctx.fillStyle = tubeGradient;
+                drawRoundedRect(450, 350, 400, 40, 20);
+                ctx.fill();
+                
+                ctx.strokeStyle = COLORS.cyan;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Pesan di dalam tabung
+                ctx.fillStyle = COLORS.textLight;
+                ctx.font = 'bold 14px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('PESAN RAHASIA', 650, 375);
+            }
+            
+            // Teks
+            const textAlpha = easeOutCubic(clamp(progress * 2, 0, 1));
+            ctx.globalAlpha = textAlpha * fadeIn;
+            
+            ctx.fillStyle = COLORS.cyan;
+            ctx.font = 'bold 36px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.shadowColor = COLORS.cyan;
+            ctx.shadowBlur = 15;
+            ctx.fillText('END-TO-END ENCRYPTION', 640, 200);
+            ctx.shadowBlur = 0;
+            
+            ctx.restore();
+        }
+        
+        // Scene 10: Cloud & Harddisk
+        function drawScene10(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Harddisk dengan rantai
+            ctx.fillStyle = '#34495E';
+            drawRoundedRect(250, 350, 180, 120, 10);
+            ctx.fill();
+            
+            ctx.strokeStyle = '#2C3E50';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            
+            // Rantai
+            if (progress > 0.2) {
+                const chainProgress = easeOutCubic(clamp((progress - 0.2) * 3, 0, 1));
+                ctx.globalAlpha = chainProgress * fadeIn;
+                
+                ctx.strokeStyle = '#95a5a6';
+                ctx.lineWidth = 8;
+                
+                for (let i = 0; i < 3; i++) {
+                    const y = 370 + i * 40;
+                    ctx.beginPath();
+                    ctx.arc(340, y, 15, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                
+                ctx.globalAlpha = fadeIn;
+            }
+            
+            // Cloud dengan brankas
+            if (progress > 0.4) {
+                const cloudProgress = easeOutBack(clamp((progress - 0.4) * 3, 0, 1));
+                ctx.globalAlpha = cloudProgress * fadeIn;
+                
+                ctx.fillStyle = COLORS.textLight;
+                drawEllipse(800, 350, 80, 50);
+                ctx.fill();
+                
+                // Pintu brankas di cloud
+                ctx.fillStyle = '#1a3a52';
+                drawRoundedRect(770, 330, 60, 80, 5);
+                ctx.fill();
+                
+                ctx.strokeStyle = COLORS.cyan;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                ctx.globalAlpha = fadeIn;
+            }
+            
+            // Agung dengan papan peringatan
+            drawAgung(t, 540, 500, 1.0, true, 10);
+            
+            // Papan peringatan
+            if (progress > 0.6) {
+                const boardProgress = easeOutCubic(clamp((progress - 0.6) * 4, 0, 1));
+                ctx.globalAlpha = boardProgress * fadeIn;
+                
+                ctx.fillStyle = COLORS.yellow;
+                drawRoundedRect(480, 550, 240, 80, 10);
+                ctx.fill();
+                
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 18px "Segoe UI", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('AES = ALAT', 600, 580);
+                ctx.fillText('KEAMANAN = CARA PAKAI', 600, 610);
+            }
+            
+            ctx.restore();
+        }
+        
+        // Scene 11: Papan rangkuman
+        function drawScene11(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Corkboard
+            const corkGradient = ctx.createLinearGradient(200, 150, 200, 550);
+            corkGradient.addColorStop(0, '#8B7355');
+            corkGradient.addColorStop(1, '#654321');
+            
+            ctx.fillStyle = corkGradient;
+            drawRoundedRect(200, 150, 880, 420, 10);
+            ctx.fill();
+            
+            ctx.strokeStyle = '#4a3520';
+            ctx.lineWidth = 8;
+            ctx.stroke();
+            
+            // Tiga polaroid
+            const polaroids = [
+                { x: 350, y: 250, text: 'STANDAR MODERN', delay: 0 },
+                { x: 600, y: 250, text: 'BLOCK CIPHER 256-BIT', delay: 0.2 },
+                { x: 850, y: 250, text: 'ADA DI MANA-MANA', delay: 0.4 }
+            ];
+            
+            polaroids.forEach((polaroid, i) => {
+                const polaroidProgress = easeOutBack(clamp((progress - polaroid.delay) * 3, 0, 1));
+                if (polaroidProgress > 0) {
+                    ctx.save();
+                    ctx.translate(polaroid.x, polaroid.y);
+                    ctx.scale(polaroidProgress, polaroidProgress);
+                    
+                    // Foto polaroid
+                    ctx.fillStyle = '#FFFFFF';
+                    drawRoundedRect(-80, -100, 160, 200, 5);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = '#CCCCCC';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    
+                    // Area foto
+                    ctx.fillStyle = '#0f2436';
+                    drawRoundedRect(-70, -90, 140, 120, 3);
+                    ctx.fill();
+                    
+                    // Teks
+                    ctx.fillStyle = '#000000';
+                    ctx.font = 'bold 14px "Segoe UI", sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(polaroid.text, 0, 70);
+                    
+                    // Pin
+                    ctx.fillStyle = COLORS.red;
+                    drawEllipse(0, -100, 8, 8);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                }
+            });
+            
+            // Teks utama
+            const textAlpha = easeOutCubic(clamp(progress * 2, 0, 1));
+            ctx.globalAlpha = textAlpha * fadeIn;
+            
+            ctx.fillStyle = COLORS.yellow;
+            ctx.font = 'bold 36px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('RANGKUMAN', 640, 520);
+            
+            ctx.restore();
+        }
+        
+        // Scene 12: Penutup
+        function drawScene12(t, progress) {
+            const fadeIn = easeOutCubic(clamp(progress * 3, 0, 1));
+            
+            ctx.save();
+            ctx.globalAlpha = fadeIn;
+            
+            // Agung melambaikan tangan
+            drawAgung(t, 400, 450, 1.2, false, 12);
+            
+            // Teaser Part 4
+            if (progress > 0.2) {
+                const teaserProgress = easeOutBack(clamp((progress - 0.2) * 3, 0, 1));
+                ctx.globalAlpha = teaserProgress * fadeIn;
+                
+                ctx.fillStyle = COLORS.cyan;
+                drawRoundedRect(700, 250, 280, 120, 15);
+                ctx.fill();
+                
+                ctx.shadowColor = COLORS.cyan;
+                ctx.shadowBlur = 20;
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 20px "Segoe UI", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('NEXT:', 840, 290);
+                ctx.font = 'bold 28px "Segoe UI", sans-serif';
+                ctx.fillText('HASHING & PASSWORD', 840, 325);
+            }
+            
+            // Tombol subscribe, like, share
+            if (progress > 0.5) {
+                const buttonsProgress = easeOutCubic(clamp((progress - 0.5) * 3, 0, 1));
+                ctx.globalAlpha = buttonsProgress * fadeIn;
+                
+                const buttons = [
+                    { x: 700, y: 500, label: 'SUBSCRIBE', color: COLORS.red },
+                    { x: 850, y: 500, label: 'LIKE', color: COLORS.yellow },
+                    { x: 1000, y: 500, label: 'SHARE', color: COLORS.green }
+                ];
+                
+                buttons.forEach((button, i) => {
+                    const buttonDelay = i * 0.1;
+                    const buttonProgress = easeOutBack(clamp((progress - 0.5 - buttonDelay) * 4, 0, 1));
+                    
+                    if (buttonProgress > 0) {
+                        ctx.save();
+                        ctx.globalAlpha = buttonProgress * fadeIn;
+                        ctx.translate(button.x, button.y);
+                        ctx.scale(buttonProgress, buttonProgress);
+                        
+                        ctx.fillStyle = button.color;
+                        drawRoundedRect(-60, -25, 120, 50, 25);
+                        ctx.fill();
+                        
+                        ctx.fillStyle = '#000000';
+                        ctx.font = 'bold 16px "Segoe UI", sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(button.label, 0, 5);
+                        
+                        ctx.restore();
+                    }
+                });
+            }
+            
+            ctx.restore();
+        }
+        
+        // ============================================================
+        // MANAJEMEN SCENE
+        // ============================================================
+        
+        function getSceneInfo(t) {
+            const scenes = [
+                { start: 0, end: 5, draw: drawScene1 },
+                { start: 5, end: 15, draw: drawScene2 },
+                { start: 15, end: 25, draw: drawScene3 },
+                { start: 25, end: 45, draw: drawScene4 },
+                { start: 45, end: 65, draw: drawScene5 },
+                { start: 65, end: 90, draw: drawScene6 },
+                { start: 90, end: 120, draw: drawScene7 },
+                { start: 120, end: 140, draw: drawScene8 },
+                { start: 140, end: 160, draw: drawScene9 },
+                { start: 160, end: 180, draw: drawScene10 },
+                { start: 180, end: 220, draw: drawScene11 },
+                { start: 220, end: 240, draw: drawScene12 }
+            ];
+            
+            for (let i = 0; i < scenes.length; i++) {
+                const scene = scenes[i];
+                if (t >= scene.start && t < scene.end) {
+                    return {
+                        index: i,
+                        progress: (t - scene.start) / (scene.end - scene.start),
+                        draw: scene.draw
+                    };
+                }
+            }
+            
+            return null;
+        }
+        
+        // ============================================================
+        // WATERMARK
+        // ============================================================
+        
+        function drawWatermark() {
+            ctx.save();
+            ctx.globalAlpha = 0.6;
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '18px "Segoe UI", sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText('AI Gabut', CANVAS_WIDTH - 30, 40);
+            ctx.restore();
+        }
+        
+        // ============================================================
+        // FUNGSI RENDER UTAMA
+        // ============================================================
+        
+        window.renderFrame = function(t) {
+            // Clear canvas
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            // Gambar background
+            drawBackground(t, 0);
+            
+            // Dapatkan scene saat ini
+            const sceneInfo = getSceneInfo(t);
+            
+            if (sceneInfo) {
+                // Gambar scene
+                sceneInfo.draw(t, sceneInfo.progress);
+            }
+            
+            // Gambar watermark di setiap frame
+            drawWatermark();
+        };
+        
+        // Render frame pertama untuk warm-up
+        window.renderFrame(0);
+        
+    </script>
+</body>
+</html>

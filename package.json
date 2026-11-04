@@ -1,0 +1,21 @@
+{
+  "name": "cyber-security-part3-aes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Animasi edukasi Cyber Security Part 3 - Enkripsi AES dengan gaya stop motion profesional",
+  "scripts": {
+    "render": "node scripts/render.js"
+  },
+  "dependencies": {
+    "puppeteer": "^22.0.0"
+  },
+  "keywords": [
+    "animation",
+    "cyber-security",
+    "aes",
+    "stop-motion",
+    "canvas"
+  ],
+  "author": "AI Gabut",
+  "license": "MIT"
+}
