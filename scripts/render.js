@@ -92,7 +92,7 @@ async function render() {
         await page.evaluate(() => window.renderFrame(0));
         
         // Dapatkan referensi canvas
-        const canvas = await page.$('#stage');
+        const canvas = await page.$('#c');
         if (!canvas) {
             throw new Error('Canvas element tidak ditemukan!');
         }
