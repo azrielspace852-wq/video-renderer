@@ -135,22 +135,35 @@ async function render() {
         // Encode video dengan FFmpeg
         console.log('\n🎥 Memulai encoding video dengan FFmpeg...');
         
-        // ✅ Gunakan array argumen + execFileSync agar karakter seperti
-        //    ( ) * : pada filter -vf TIDAK ditafsirkan oleh shell.
+        // ============================================================
+        // OPTIMASI UKURAN FILE: CRF lebih tinggi = file lebih kecil
+        // CRF 18 (default) → CRF 24-28 untuk kompresi lebih agresif
+        // preset 'slow' = kompresi lebih efisien (lebih lama encode)
+        // tune 'animation' = dioptimalkan untuk konten animasi/flat-color
+        // ============================================================
+        const CRF = 26;        // 18-28: semakin tinggi = file semakin kecil, kualitas turun sedikit
+        const PRESET = 'slow'; // ultrafast, superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+        const TUNE = 'animation'; // film, animation, grain, stillimage, fastdecode, zerolatency
+        
         const ffmpegArgs = [
             '-y',
             '-framerate', String(FPS),
             '-i', path.join(FRAME_DIR, 'frame_%05d.png'),
             '-c:v', 'libx264',
-            '-preset', 'medium',
-            '-crf', '18',
+            '-preset', PRESET,
+            '-crf', String(CRF),
+            '-tune', TUNE,
             '-pix_fmt', 'yuv420p',
             '-movflags', '+faststart',
             '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
             OUTPUT_FILE
         ];
         
-        console.log(`⚙️  Command: ffmpeg ${ffmpegArgs.join(' ')}`);
+        console.log(`⚙️  FFmpeg settings:`);
+        console.log(`   - CRF: ${CRF} (default 18, range 0-51, higher = smaller file)`);
+        console.log(`   - Preset: ${PRESET} (slower = better compression)`);
+        console.log(`   - Tune: ${TUNE} (optimized for animation content)`);
+        console.log(`   - Command: ffmpeg ${ffmpegArgs.join(' ')}`);
         
         try {
             execFileSync('ffmpeg', ffmpegArgs, { stdio: 'inherit' });
@@ -168,6 +181,7 @@ async function render() {
             console.log(`💾 Ukuran: ${fileSizeMB} MB`);
             console.log(`⏱️  Durasi: ${TOTAL_DURATION} detik`);
             console.log(`🎞️  Frame: ${TOTAL_FRAMES}`);
+            console.log(`📐 Resolusi: ${CANVAS_WIDTH}x${CANVAS_HEIGHT} @ ${FPS}fps`);
             
             // Cleanup frames
             console.log('\n🧹 Membersihkan frame...');
